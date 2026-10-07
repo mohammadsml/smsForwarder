@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SMS Forwarder</string>
+    <string name="notif_title">SMS Forwarder</string>
+
+    <string name="subtitle">Forward incoming SMS to destination phone numbers and HTTP servers via JSON POST.</string>
+
+    <string name="switch_label">Enable Forwarding</string>
+    <string name="switch_sms_label">Forward to SMS</string>
+    <string name="switch_http_label">Forward to HTTP POST (JSON)</string>
+
+    <string name="label_sources">Sources (SMS Sender)</string>
+    <string name="hint_source">TejaratBank or 3000777</string>
+    <string name="hint_sources">Add each source individually. If the sender contains any of these, the SMS will be forwarded.</string>
+
+    <string name="label_destinations">SMS Destinations</string>
+    <string name="hint_destination">0912xxxxxxx</string>
+    <string name="hint_destinations">Add each number individually. Matching SMS will be sent to all destinations.</string>
+
+    <string name="label_workers">HTTP Workers (Webhooks)</string>
+    <string name="hint_worker_url">https://example.com/api/sms or http://...</string>
+    <string name="hint_workers_desc">Add server URLs where incoming SMS will be posted as JSON.</string>
+    <string name="toast_worker_rejected">Worker URL is invalid or already added</string>
+
+    <string name="label_template">Forwarded Text Template</string>
+    <string name="hint_template_desc">Customize the forwarded text. Use {text} as placeholder for the original SMS body.</string>
+    <string name="hint_template_input">e.g. [Alert] {text}</string>
+
+    <string name="btn_add">Add</string>
+    <string name="btn_remove">Remove</string>
+    <string name="list_empty">No entries added yet</string>
+    <string name="toast_source_rejected">Source is empty or already added</string>
+    <string name="toast_dest_rejected">Destination number is invalid or already added</string>
+
+    <string name="btn_save">Save Settings</string>
+    <string name="btn_perms">Grant Permissions</string>
+    <string name="btn_battery">Disable Battery Optimization</string>
+    <string name="btn_reset">Clear Queue</string>
+
+    <string name="label_status">Status</string>
+    <string name="label_log">Event Log</string>
+    <string name="log_empty">No events logged yet</string>
+
+    <!-- Logs Activity -->
+    <string name="title_logs">Logs &amp; HTTP Traffic</string>
+    <string name="btn_view_logs">View Logs &amp; HTTP Traffic →</string>
+    <string name="tab_http_traffic">HTTP Traffic (JSON)</string>
+    <string name="tab_event_logs">Event Logs</string>
+    <string name="btn_clear">Clear</string>
+    <string name="btn_copy">Copy</string>
+    <string name="btn_back">← Back</string>
+    <string name="toast_logs_copied">Logs copied to clipboard</string>
+    <string name="http_log_empty">No HTTP requests logged yet</string>
+
+    <string name="tips">To keep running in the background: Disable battery optimization for this app, and enable Autostart on MIUI/EMUI/Huawei.</string>
+
+    <string name="credit">Developed by mohammadsml</string>
+</resources>
