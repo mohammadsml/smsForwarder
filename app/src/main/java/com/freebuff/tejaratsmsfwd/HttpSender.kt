@@ -1,6 +1,7 @@
 package com.freebuff.tejaratsmsfwd
 
 import android.content.Context
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -52,20 +53,20 @@ object HttpSender {
                     setRequestProperty("User-Agent", "SmsForwarder/1.0")
                 }
 
-                val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-                    timeZone = TimeZone.getTimeZone("UTC")
-                }.format(Date(item.ts))
+                val template = Store.httpJsonTemplate(app)
+                val rawPayload = Store.formatHttpPayload(template, item.from, item.text, item.rawText, item.ts)
 
-                val json = JSONObject().apply {
-                    put("from", item.from)
-                    put("text", item.text)
-                    put("rawText", item.rawText)
-                    put("timestamp", item.ts)
-                    put("date", isoDate)
+                prettyJson = try {
+                    JSONObject(rawPayload).toString(2)
+                } catch (e: Exception) {
+                    try {
+                        JSONArray(rawPayload).toString(2)
+                    } catch (e2: Exception) {
+                        rawPayload
+                    }
                 }
 
-                prettyJson = json.toString(2)
-                val payload = json.toString().toByteArray(Charsets.UTF_8)
+                val payload = rawPayload.toByteArray(Charsets.UTF_8)
                 conn.setFixedLengthStreamingMode(payload.size)
                 conn.outputStream.use { os ->
                     os.write(payload)

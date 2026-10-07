@@ -80,6 +80,26 @@ User-Agent: SmsForwarder/1.0
 | `timestamp` | number | Epoch timestamp in milliseconds. |
 | `date` | string | ISO-8601 UTC formatted date string. |
 
+### 🛠️ Customizable JSON Payload Template
+
+You can fully customize the JSON schema dispatched to your HTTP workers in the app UI:
+- Place `{text}` wherever you want the forwarded SMS text to appear.
+- The app automatically JSON-escapes special characters (quotes `"`, newlines `\n`, backslashes `\`) safely to guarantee valid JSON.
+- Additional available placeholders:
+  - `{from}`: Sender address or shortcode (e.g. `TejaratBank`).
+  - `{rawText}` / `{raw_text}`: Untouched incoming SMS text.
+  - `{timestamp}`: Numeric epoch timestamp in milliseconds.
+  - `{date}`: ISO-8601 UTC timestamp string.
+
+Example custom payload template:
+```json
+{
+  "event": "incoming_sms",
+  "sender": "{from}",
+  "message": "{text}"
+}
+```
+
 ### Expected Server Response
 - **HTTP 200..299**: Marked as successful and removed from the queue.
 - **Any other status code or timeout**: Message remains safely in the queue and retries with backoff.
@@ -109,7 +129,7 @@ app.listen(3000, () => console.log('Listening on port 3000'));
 
 ```python
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 app = FastAPI()
 
@@ -149,8 +169,8 @@ In the **Forwarded Text Template** card, you can configure how the message text 
    - Open the app and tap **Grant Permissions**.
    - Allow `RECEIVE_SMS`, `READ_SMS`, `SEND_SMS` (and `POST_NOTIFICATIONS` on Android 13+).
 3. **Configure Filters & Destinations**:
-   - **Sources**: Add sender names or numbers you want to forward (e.g. `tejarat`, `3000777`). Leave blank to forward all incoming SMS.
-   - **SMS Destinations**: Enter recipient phone numbers (e.g. `0912xxxxxxx`).
+   - **Sources**: Add sender names or numbers you want to forward (e.g. `Bank`, `Service`, `3000777`). Leave blank to forward all incoming SMS.
+   - **SMS Destinations**: Enter recipient phone numbers worldwide (e.g. `+14155552671`, `+447911123456`, or local numbers).
    - **HTTP Workers**: Enter webhook URLs (e.g. `https://example.com/api/sms`).
 4. **Disable Battery Optimization**:
    - Tap **Disable Battery Optimization** in the app and allow the prompt. This prevents Android Doze from putting the forwarder to sleep.

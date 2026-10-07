@@ -12,17 +12,19 @@ object Sender {
     /** An in-flight item older than this is considered lost and is retried. */
     const val STALE_MS = 10 * 60 * 1000L
 
-    /** Convert Iranian local formats to an international number. */
+    /** Normalize any international or local phone number worldwide. */
     fun normalizeNumber(raw: String): String {
-        val n = foldDigits(raw).trim().replace(" ", "").replace("-", "").replace("‎", "").replace("‏", "")
-        if (n.isEmpty()) return ""
+        val folded = foldDigits(raw).trim()
+        if (folded.isEmpty()) return ""
+
+        val hasPlus = folded.startsWith("+")
+        val cleanDigits = folded.filter { it.isDigit() }
+        if (cleanDigits.isEmpty()) return ""
+
         return when {
-            n.startsWith("+") -> n
-            n.startsWith("0098") -> "+${n.substring(2)}"
-            n.startsWith("98") && n.length >= 12 -> "+$n"
-            n.startsWith("0") && n.length == 11 -> "+98${n.substring(1)}"
-            n.startsWith("9") && n.length == 10 -> "+98$n"
-            else -> n
+            hasPlus -> "+$cleanDigits"
+            cleanDigits.startsWith("00") && cleanDigits.length > 4 -> "+${cleanDigits.substring(2)}"
+            else -> cleanDigits
         }
     }
 
@@ -54,7 +56,7 @@ object Sender {
         val item = Store.claimNext(app) ?: return
         val number = normalizeNumber(item.to)
 
-        if (number.length < 8) {
+        if (number.length < 3) {
             Store.drop(app, item.id)
             Store.log(app, "Invalid destination number; message discarded")
             pump(c)

@@ -10,17 +10,21 @@
     <string name="switch_http_label">Forward to HTTP POST (JSON)</string>
 
     <string name="label_sources">Sources (SMS Sender)</string>
-    <string name="hint_source">TejaratBank or 3000777</string>
+    <string name="hint_source">e.g. Bank, Service, or 1000</string>
     <string name="hint_sources">Add each source individually. If the sender contains any of these, the SMS will be forwarded.</string>
 
     <string name="label_destinations">SMS Destinations</string>
-    <string name="hint_destination">0912xxxxxxx</string>
+    <string name="hint_destination">+1... or any phone number</string>
     <string name="hint_destinations">Add each number individually. Matching SMS will be sent to all destinations.</string>
 
     <string name="label_workers">HTTP Workers (Webhooks)</string>
     <string name="hint_worker_url">https://example.com/api/sms or http://...</string>
     <string name="hint_workers_desc">Add server URLs where incoming SMS will be posted as JSON.</string>
     <string name="toast_worker_rejected">Worker URL is invalid or already added</string>
+    <string name="label_http_json_template">HTTP POST JSON Template</string>
+    <string name="hint_http_json_desc">Customize the JSON structure sent to HTTP workers. Put {text} where SMS text should appear. Other placeholders: {from}, {rawText}, {timestamp}, {date}.</string>
+    <string name="btn_reset_json">Default JSON</string>
+    <string name="toast_invalid_json">Warning: JSON template appears to have invalid syntax</string>
 
     <string name="label_template">Forwarded Text Template</string>
     <string name="hint_template_desc">Customize the forwarded text. Use {text} as placeholder for the original SMS body.</string>

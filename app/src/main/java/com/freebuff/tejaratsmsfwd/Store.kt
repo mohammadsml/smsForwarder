@@ -7,6 +7,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 /** A single outgoing forward request for SMS. */
 data class QueuedSms(
@@ -56,6 +57,8 @@ object Store {
     private const val K_DESTS = "destinations"
     private const val K_WORKERS = "http_workers"
     private const val K_TEMPLATE = "template"
+    const val DEFAULT_HTTP_JSON = "{\n  \"from\": \"{from}\",\n  \"text\": \"{text}\",\n  \"rawText\": \"{rawText}\",\n  \"timestamp\": {timestamp},\n  \"date\": \"{date}\"\n}"
+    private const val K_HTTP_JSON = "http_json_template"
     private const val K_QUEUE = "queue"
     private const val K_HTTP_QUEUE = "http_queue"
     private const val K_LOG = "log"
@@ -117,6 +120,48 @@ object Store {
         }
     }
 
+    fun httpJsonTemplate(c: Context): String =
+        prefs(c).getString(K_HTTP_JSON, DEFAULT_HTTP_JSON) ?: DEFAULT_HTTP_JSON
+
+    fun setHttpJsonTemplate(c: Context, value: String) {
+        val clean = value.trim().ifEmpty { DEFAULT_HTTP_JSON }
+        prefs(c).edit().putString(K_HTTP_JSON, clean).apply()
+    }
+
+    fun formatHttpPayload(template: String, from: String, text: String, rawText: String, ts: Long): String {
+        val t = template.trim().ifEmpty { DEFAULT_HTTP_JSON }
+        val isoDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+        }.format(Date(ts))
+
+        val quotedText = JSONObject.quote(text)
+        val quotedRawText = JSONObject.quote(rawText)
+        val quotedFrom = JSONObject.quote(from)
+        val quotedDate = JSONObject.quote(isoDate)
+
+        var result = t
+
+        // Replace quoted placeholders first if written as "{placeholder}", then bare {placeholder}
+        result = result.replace("\"{text}\"", quotedText)
+        result = result.replace("{text}", quotedText)
+
+        result = result.replace("\"{rawText}\"", quotedRawText)
+        result = result.replace("{rawText}", quotedRawText)
+        result = result.replace("\"{raw_text}\"", quotedRawText)
+        result = result.replace("{raw_text}", quotedRawText)
+
+        result = result.replace("\"{from}\"", quotedFrom)
+        result = result.replace("{from}", quotedFrom)
+
+        result = result.replace("\"{date}\"", quotedDate)
+        result = result.replace("{date}", quotedDate)
+
+        result = result.replace("\"{timestamp}\"", ts.toString())
+        result = result.replace("{timestamp}", ts.toString())
+
+        return result
+    }
+
     fun sources(c: Context): List<String> = synchronized(lock) {
         ensureListsLocked(c)
         readStringList(c, K_SOURCES)
@@ -159,7 +204,7 @@ object Store {
         var added = 0
         for (token in splitEntries(raw)) {
             val number = Sender.normalizeNumber(token)
-            if (number.length < 8) continue
+            if (number.length < 3) continue
             if (current.any { it == number }) continue
             current.add(number)
             added++
@@ -219,16 +264,25 @@ object Store {
 
     fun log(c: Context, message: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        val cleanMsg = sanitizeLegacyLog(message)
         synchronized(lock) {
             val p = prefs(c)
             val lines = (p.getString(K_LOG, "") ?: "").lines().filter { it.isNotEmpty() }.toMutableList()
-            lines.add("$time  $message")
+            lines.add("$time  $cleanMsg")
             while (lines.size > 50) lines.removeAt(0)
             p.edit().putString(K_LOG, lines.joinToString("\n")).apply()
         }
     }
 
-    fun logText(c: Context): String = prefs(c).getString(K_LOG, "") ?: ""
+    fun logText(c: Context): String = synchronized(lock) {
+        val p = prefs(c)
+        val raw = p.getString(K_LOG, "") ?: ""
+        val clean = sanitizeLegacyLog(raw)
+        if (clean != raw) {
+            p.edit().putString(K_LOG, clean).apply()
+        }
+        clean
+    }
 
     fun clearLog(c: Context) {
         prefs(c).edit().remove(K_LOG).apply()
@@ -237,23 +291,94 @@ object Store {
     // ---- HTTP traffic log ----
 
     fun logHttp(c: Context, entry: String) {
+        val cleanEntry = sanitizeLegacyLog(entry)
         synchronized(lock) {
             val p = prefs(c)
             val raw = p.getString(K_HTTP_LOG, "") ?: ""
             val list = if (raw.isEmpty()) mutableListOf() else raw.split(HTTP_LOG_DELIMITER).filter { it.isNotBlank() }.toMutableList()
-            list.add(0, entry) // Newest first
+            list.add(0, cleanEntry) // Newest first
             while (list.size > 30) list.removeAt(list.size - 1)
             p.edit().putString(K_HTTP_LOG, list.joinToString(HTTP_LOG_DELIMITER)).apply()
         }
     }
 
     fun httpLogText(c: Context): String = synchronized(lock) {
-        val raw = prefs(c).getString(K_HTTP_LOG, "") ?: ""
-        if (raw.isBlank()) "" else raw.split(HTTP_LOG_DELIMITER).joinToString("\n\n")
+        val p = prefs(c)
+        val raw = p.getString(K_HTTP_LOG, "") ?: ""
+        val clean = sanitizeLegacyLog(raw)
+        if (clean != raw) {
+            p.edit().putString(K_HTTP_LOG, clean).apply()
+        }
+        if (clean.isBlank()) "" else clean.split(HTTP_LOG_DELIMITER).joinToString("\n\n")
     }
 
     fun clearHttpLog(c: Context) {
         prefs(c).edit().remove(K_HTTP_LOG).apply()
+    }
+
+    fun sanitizeLegacyLog(raw: String): String {
+        if (raw.isBlank()) return ""
+        var s = raw
+        s = s.replace("سرویس: ", "Service: ")
+        s = s.replace("سرویس فعال شد", "Service enabled")
+        s = s.replace("سرویس غیرفعال شد", "Service disabled")
+        s = s.replace("سرویس متوقف شد", "Service stopped")
+        s = s.replace("تنظیمات ذخیره شد", "Settings saved")
+        s = s.replace("صف ارسال خالی شد", "Outbound queues cleared")
+        s = s.replace("مجوزها داده شد", "Permissions granted")
+        s = s.replace("همه مجوزها داده شده‌اند", "All permissions granted")
+        s = s.replace("بعضی مجوزها رد شدند؛ فوروارد کار نمی‌کند", "Some permissions were denied; forwarding will not work")
+        s = s.replace("تنظیمات باتری در دسترس نیست", "Battery settings not available")
+        s = s.replace("خطای سرویس پیش‌زمینه:", "Foreground service error:")
+
+        s = s.replace("پیام در صف ارسال", "message(s) in queue")
+        s = s.replace("مبدأ یا مقصد تنظیم نشده", "Source or destination not configured")
+        s = s.replace("مبدأ اضافه شد", "source(s) added")
+        s = s.replace("مقصد اضافه شد", "destination(s) added")
+        s = s.replace("مبدأ حذف شد:", "Source removed:")
+        s = s.replace("مقصد حذف شد:", "Destination removed:")
+        s = s.replace("مبدأها:", "Sources:")
+        s = s.replace("مقصدها:", "Destinations:")
+        s = s.replace("مبدأ", "source")
+        s = s.replace("مقصد", "destination")
+        s = s.replace("(تنظیم نشده)", "(Not configured)")
+        s = s.replace("فعال", "Enabled")
+        s = s.replace("غیرفعال", "Disabled")
+        s = s.replace("داده شده", "Granted")
+        s = s.replace("داده نشده", "Not granted")
+        s = s.replace("در صف ارسال:", "Queued:")
+        s = s.replace("بهینه‌سازی باتری:", "Battery optimization:")
+        s = s.replace("مجوز پیامک:", "SMS permission:")
+        s = s.replace("مجوز اعلان:", "Notification permission:")
+
+        s = s.replace("ارسال شد", "Sent")
+        s = s.replace("ارسال", "Sending")
+        s = s.replace("ناموفق", "Failed")
+        s = s.replace("تلاش مجدد", "Retrying")
+        s = s.replace("تلاش", "attempt")
+        s = s.replace("خطای ارسال:", "Send error:")
+        s = s.replace("شماره مقصد نامعتبر است؛ پیام حذف شد", "Invalid destination number; message discarded")
+        s = s.replace("مقصدی تنظیم نشده؛ پیام از", "No destination configured; message from")
+        s = s.replace("فوروارد نشد", "not forwarded")
+        s = s.replace("دریافت از", "Received from")
+        s = s.replace("در صف", "in queue")
+        s = s.replace("بازبینی صف:", "Queue check:")
+        s = s.replace("پیام باقی‌مانده", "message(s) remaining")
+        s = s.replace("زمان‌بند بیدار ماندن ناموفق:", "Keep-alive scheduler failed:")
+        s = s.replace("شروع سرویس ممکن نشد:", "Could not start service:")
+        s = s.replace("راه‌اندازی پس از", "Started after")
+        s = s.replace("هنوز رویدادی ثبت نشده است", "No events logged yet")
+        s = s.replace("، ", ", ")
+
+        return buildString(s.length) {
+            for (ch in s) {
+                when (ch) {
+                    in '۰'..'۹' -> append('0' + (ch - '۰'))
+                    in '٠'..'٩' -> append('0' + (ch - '٠'))
+                    else -> append(ch)
+                }
+            }
+        }
     }
 
     // ---- SMS queue ----
@@ -555,7 +680,7 @@ object Store {
         val sources = if (p.contains(K_HEADERS)) splitLoose(p.getString(K_HEADERS, "") ?: "") else emptyList()
         val rawTarget = if (p.contains(K_TARGET)) p.getString(K_TARGET, "") ?: "" else ""
         val number = Sender.normalizeNumber(rawTarget)
-        val dests = if (number.length >= 8) listOf(number) else emptyList()
+        val dests = if (number.length >= 3) listOf(number) else emptyList()
         writeStringList(c, K_SOURCES, sources)
         writeStringList(c, K_DESTS, dests)
     }

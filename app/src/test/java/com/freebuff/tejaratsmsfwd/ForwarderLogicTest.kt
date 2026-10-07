@@ -2,6 +2,7 @@ package com.freebuff.tejaratsmsfwd
 
 import android.content.Context
 import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -24,14 +25,21 @@ class ForwarderLogicTest {
     // ---- destination number normalization ----
 
     @Test
-    fun normalizesIranianNumberFormats() {
-        assertEquals("+989928927408", Sender.normalizeNumber("09928927408"))
-        assertEquals("+989928927408", Sender.normalizeNumber("9928927408"))
-        assertEquals("+989928927408", Sender.normalizeNumber("989928927408"))
-        assertEquals("+989928927408", Sender.normalizeNumber("00989928927408"))
+    fun normalizesGlobalNumberFormats() {
+        // International format with +
+        assertEquals("+14155552671", Sender.normalizeNumber("+1 415 555-2671"))
+        assertEquals("+447911123456", Sender.normalizeNumber("+44 7911 123456"))
         assertEquals("+989928927408", Sender.normalizeNumber("+989928927408"))
-        assertEquals("+989928927408", Sender.normalizeNumber("0992 892 7408"))
-        assertEquals("+989928927408", Sender.normalizeNumber("۰۹۹۲۸۹۲۷۴۰۸"))
+
+        // Leading 00 international prefix
+        assertEquals("+14155552671", Sender.normalizeNumber("0014155552671"))
+        assertEquals("+989928927408", Sender.normalizeNumber("00989928927408"))
+
+        // Local formats (preserved without forcing foreign country code)
+        assertEquals("09928927408", Sender.normalizeNumber("09928927408"))
+        assertEquals("07911123456", Sender.normalizeNumber("07911 123456"))
+        assertEquals("09928927408", Sender.normalizeNumber("۰۹۹۲۸۹۲۷۴۰۸"))
+        assertEquals("1234", Sender.normalizeNumber("1234"))
         assertEquals("", Sender.normalizeNumber("   "))
     }
 
@@ -122,10 +130,10 @@ class ForwarderLogicTest {
         assertEquals("duplicate source is ignored", 0, Store.addSources(context, "Tejarat"))
         assertEquals(listOf("tejarat", "3000777"), Store.sources(context))
 
-        assertEquals(2, Store.addDestinations(context, "09120000000\n09928927408"))
-        assertEquals("duplicate destination is ignored", 0, Store.addDestinations(context, "09120000000"))
-        assertEquals("short number is rejected", 0, Store.addDestinations(context, "12345"))
-        assertEquals(listOf("+989120000000", "+989928927408"), Store.destinations(context))
+        assertEquals(2, Store.addDestinations(context, "+14155552671\n09928927408"))
+        assertEquals("duplicate destination is ignored", 0, Store.addDestinations(context, "+14155552671"))
+        assertEquals("short number is rejected", 0, Store.addDestinations(context, "12"))
+        assertEquals(listOf("+14155552671", "09928927408"), Store.destinations(context))
 
         assertTrue(Store.matches(context, "TejaratBank"))
         assertTrue(Store.matches(context, "3000777"))
@@ -135,15 +143,15 @@ class ForwarderLogicTest {
         assertEquals(2, Store.queueSize(context))
 
         val first = Store.claimNext(context)
-        assertEquals("+989120000000", first!!.to)
+        assertEquals("+14155552671", first!!.to)
         Store.applyAck(context, first.id, partOk = true, totalParts = 1)
         val second = Store.claimNext(context)
-        assertEquals("+989928927408", second!!.to)
+        assertEquals("09928927408", second!!.to)
 
         Store.removeSource(context, "tejarat")
-        Store.removeDestination(context, "+989120000000")
+        Store.removeDestination(context, "+14155552671")
         assertEquals(listOf("3000777"), Store.sources(context))
-        assertEquals(listOf("+989928927408"), Store.destinations(context))
+        assertEquals(listOf("09928927408"), Store.destinations(context))
         assertFalse(Store.matches(context, "TejaratBank"))
     }
 
@@ -160,11 +168,22 @@ class ForwarderLogicTest {
         val prefs = context.getSharedPreferences("tejarat_fwd", Context.MODE_PRIVATE)
         prefs.edit()
             .putString("headers", "tejarat, MCI")
-            .putString("target", "09928927408")
+            .putString("target", "+14155552671")
             .commit()
 
         assertEquals(listOf("tejarat", "MCI"), Store.sources(context))
-        assertEquals(listOf("+989928927408"), Store.destinations(context))
+        assertEquals(listOf("+14155552671"), Store.destinations(context))
+    }
+
+    @Test
+    fun legacyPersianLogTextIsSanitized() {
+        val persianSample = "دریافت پیام از: بانک تجارت | وضعیت: موفق | ارسال مجدد"
+        val sanitized = Store.sanitizeLegacyLog(persianSample)
+        assertFalse("Persian characters must be replaced", sanitized.contains("دریافت"))
+        assertFalse("Persian characters must be replaced", sanitized.contains("وضعیت"))
+        assertTrue(sanitized.contains("Received SMS from:"))
+        assertTrue(sanitized.contains("Status:"))
+        assertTrue(sanitized.contains("Sent successfully"))
     }
 
     @Test
@@ -258,5 +277,58 @@ class ForwarderLogicTest {
 
         Store.clearHttpLog(context)
         assertEquals("", Store.httpLogText(context))
+    }
+
+    @Test
+    fun httpJsonTemplateCanBeConfiguredAndReset() {
+        val initial = Store.httpJsonTemplate(context)
+        assertTrue(initial.contains("{text}"))
+        assertTrue(initial.contains("{from}"))
+
+        Store.setHttpJsonTemplate(context, """{"message":"{text}"}""")
+        assertEquals("""{"message":"{text}"}""", Store.httpJsonTemplate(context))
+
+        Store.setHttpJsonTemplate(context, "")
+        assertEquals(Store.DEFAULT_HTTP_JSON, Store.httpJsonTemplate(context))
+    }
+
+    @Test
+    fun formatHttpPayloadSubstitutesPlaceholdersAndQuotesSafely() {
+        val template = """{"sender":"{from}","content":"{text}","raw":"{rawText}","ts":{timestamp}}"""
+        val complexSms = "Line 1\nCard \"6037\" transferred:\n100,000 Rials"
+
+        val payload = Store.formatHttpPayload(
+            template = template,
+            from = "TejaratBank",
+            text = complexSms,
+            rawText = complexSms,
+            ts = 1728325491000L
+        )
+
+        val json = JSONObject(payload)
+        assertEquals("TejaratBank", json.getString("sender"))
+        assertEquals(complexSms, json.getString("content"))
+        assertEquals(complexSms, json.getString("raw"))
+        assertEquals(1728325491000L, json.getLong("ts"))
+    }
+
+    @Test
+    fun formatHttpPayloadWorksWhenUserOmitsQuotesAroundPlaceholder() {
+        val template = """{"content":{text},"from":{from}}"""
+        val payload = Store.formatHttpPayload(template, "Bank", "Hello World", "Hello World", 1000L)
+        val json = JSONObject(payload)
+        assertEquals("Hello World", json.getString("content"))
+        assertEquals("Bank", json.getString("from"))
+    }
+
+    @Test
+    fun defaultHttpPayloadMatchesStandardSchema() {
+        val payload = Store.formatHttpPayload(Store.DEFAULT_HTTP_JSON, "Bank", "Formatted", "Raw", 1728325491000L)
+        val json = JSONObject(payload)
+        assertEquals("Bank", json.getString("from"))
+        assertEquals("Formatted", json.getString("text"))
+        assertEquals("Raw", json.getString("rawText"))
+        assertEquals(1728325491000L, json.getLong("timestamp"))
+        assertTrue(json.getString("date").endsWith("Z"))
     }
 }

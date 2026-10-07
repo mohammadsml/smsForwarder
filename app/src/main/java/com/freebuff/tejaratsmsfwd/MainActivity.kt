@@ -18,12 +18,15 @@ import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
 
     private lateinit var switchSmsEnabled: Switch
     private lateinit var switchHttpEnabled: Switch
     private lateinit var inputTemplate: EditText
+    private lateinit var inputHttpJson: EditText
     private lateinit var inputSource: EditText
     private lateinit var inputDestination: EditText
     private lateinit var inputWorker: EditText
@@ -59,6 +62,13 @@ class MainActivity : Activity() {
 
         inputTemplate.setText(Store.template(this))
 
+        inputHttpJson = findViewById(R.id.input_http_json)
+        inputHttpJson.setText(Store.httpJsonTemplate(this))
+
+        findViewById<Button>(R.id.btn_default_http_json).setOnClickListener {
+            inputHttpJson.setText(Store.DEFAULT_HTTP_JSON)
+        }
+
         findViewById<Button>(R.id.btn_add_source).setOnClickListener { addSource() }
         findViewById<Button>(R.id.btn_add_destination).setOnClickListener { addDestination() }
         findViewById<Button>(R.id.btn_add_worker).setOnClickListener { addWorker() }
@@ -92,12 +102,25 @@ class MainActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
                 val number = Sender.normalizeNumber(s?.toString().orEmpty())
-                textDestPreview.text = if (number.length < 8) "" else "Will be saved as: $number"
+                textDestPreview.text = if (number.length < 3) "" else "Will be saved as: $number"
             }
         })
 
         findViewById<Button>(R.id.btn_save).setOnClickListener {
             Store.setTemplate(this, inputTemplate.text.toString())
+            val jsonTpl = inputHttpJson.text.toString()
+            Store.setHttpJsonTemplate(this, jsonTpl)
+            try {
+                val dummy = Store.formatHttpPayload(jsonTpl, "TestSender", "Test SMS body", "Test SMS body", System.currentTimeMillis())
+                JSONObject(dummy)
+            } catch (e: Exception) {
+                try {
+                    val dummy = Store.formatHttpPayload(jsonTpl, "TestSender", "Test SMS body", "Test SMS body", System.currentTimeMillis())
+                    JSONArray(dummy)
+                } catch (e2: Exception) {
+                    Toast.makeText(this, R.string.toast_invalid_json, Toast.LENGTH_SHORT).show()
+                }
+            }
             Store.log(this, "Settings saved")
             renderLists()
             refresh()
@@ -120,6 +143,15 @@ class MainActivity : Activity() {
 
         findViewById<Button>(R.id.btn_view_logs).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
+        }
+
+        findViewById<TextView>(R.id.text_credit).setOnClickListener {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/mohammadsml"))
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not open link", Toast.LENGTH_SHORT).show()
+            }
         }
 
         renderLists()
